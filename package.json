@@ -1,0 +1,26 @@
+{
+  "name": "bolle-backend",
+  "version": "1.0.0",
+  "description": "Backend pour l'application Bollé de signalement citoyen au Sénégal",
+  "main": "index.js",
+  "scripts": {
+    "install-all": "concurrently \"cd api-gateway && npm install\" \"cd auth-service && npm install\" \"cd alert-service && npm install\" \"cd user-service && npm install\" \"cd media-service && npm install\" \"cd notification-service && npm install\" \"cd analytics-service && npm install\" \"cd service-management && npm install\" \"cd hygiene-service && npm install\"",
+    "start-all": "concurrently \"cd api-gateway && npm start\" \"cd auth-service && npm start\" \"cd alert-service && npm start\" \"cd user-service && npm start\" \"cd media-service && npm start\" \"cd notification-service && npm start\" \"cd analytics-service && npm start\" \"cd service-management && npm start\" \"cd hygiene-service && npm start\"",
+    "dev": "concurrently \"cd api-gateway && npm run dev\" \"cd auth-service && npm run dev\" \"cd alert-service && npm run dev\" \"cd user-service && npm run dev\" \"cd media-service && npm run dev\" \"cd notification-service && npm run dev\" \"cd analytics-service && npm run dev\" \"cd service-management && npm run dev\" \"cd hygiene-service && npm run dev\"",
+    "dev-minimal": "concurrently \"cd api-gateway && npm run dev\" \"cd auth-service && npm run dev\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "senegal",
+    "citizen-reporting",
+    "microservices"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
