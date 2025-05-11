@@ -8,6 +8,7 @@ const dashboardRoutes = require('./dashboard.routes');
 const alertRoutes = require('./alert.routes');
 const inspectionRoutes = require('./inspection.routes');
 const zoneRoutes = require('./zone.routes');
+const teamRoutes = require('./team.routes');
 const reportRoutes = require('./report.routes');
 
 // Route de base pour vérifier l'état du service
@@ -27,6 +28,7 @@ router.use('/dashboard', authMiddleware.verifyToken, authMiddleware.isHygieneSer
 router.use('/alerts', authMiddleware.verifyToken, authMiddleware.isHygieneService, alertRoutes);
 router.use('/inspections', authMiddleware.verifyToken, authMiddleware.isHygieneService, inspectionRoutes);
 router.use('/zones', authMiddleware.verifyToken, authMiddleware.isHygieneService, zoneRoutes);
+router.use('/teams', authMiddleware.verifyToken, authMiddleware.isHygieneService, teamRoutes);
 router.use('/reports', authMiddleware.verifyToken, authMiddleware.isHygieneService, reportRoutes);
 
 module.exports = router;

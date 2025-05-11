@@ -1,6 +1,7 @@
-const axios = require('axios');
+const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const config = require('../config/env');
+const Alert = require('../models/alert');
 const Team = require('../models/team');
 const Inspection = require('../models/inspection');
 const Zone = require('../models/zone');
@@ -17,98 +18,90 @@ const Zone = require('../models/zone');
 exports.getHygieneAlerts = async (req, res, next) => {
   try {
     // Récupérer les paramètres de filtrage et pagination
-    const { status, startDate, endDate, page = 1, limit = 10 } = req.query;
+    const { status, priority, startDate, endDate, page = 1, limit = 10 } = req.query;
     
-    // Construire les paramètres de requête pour le service d'alertes
-    const params = {
-      category: 'hygiene',
-      page,
-      limit,
-      sort: '-createdAt'
-    };
+    // Construire le filtre pour la requête MongoDB
+    const filter = { category: 'hygiene' };
     
     if (status) {
-      params.status = status;
+      // Vérifier que le statut est valide
+      const validStatuses = ['new', 'assigned', 'in_progress', 'resolved', 'closed'];
+      if (validStatuses.includes(status)) {
+        filter.status = status;
+      } else {
+        logger.warn(`Statut invalide: ${status}`);
+      }
     }
     
-    if (startDate) {
-      params.startDate = startDate;
+    if (priority) {
+      // Vérifier que la priorité est valide
+      const validPriorities = ['low', 'medium', 'high', 'critical'];
+      if (validPriorities.includes(priority)) {
+        filter.priority = priority;
+      } else {
+        logger.warn(`Priorité invalide: ${priority}`);
+      }
     }
     
-    if (endDate) {
-      params.endDate = endDate;
-    }
-    
-    // Appeler le service d'alertes
-    try {
-      const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts`, {
-        params,
-        headers: {
-          'Authorization': req.headers.authorization
-        }
-      });
+    // Filtrage par date
+    if (startDate || endDate) {
+      filter.createdAt = {};
       
-      // Enrichir les alertes avec des informations supplémentaires du service d'hygiène
-      const enrichedAlerts = await Promise.all(response.data.data.map(async alert => {
-        // Vérifier si l'alerte a une inspection associée
-        const inspection = await Inspection.findOne({ alertId: alert._id });
-        
-        // Vérifier si l'alerte est dans une zone à risque
-        let zones = [];
-        if (alert.location && alert.location.coordinates) {
-          const zonesContainingAlert = await Zone.find({
-            'boundary.type': 'Polygon'
-          });
-          
-          zones = zonesContainingAlert
-            .filter(zone => {
-              // Utiliser une fonction simplifiée pour vérifier si le point est dans le polygone
-              const point = alert.location.coordinates;
-              const polygon = zone.boundary.coordinates[0];
-              
-              // Algorithme du point-in-polygon
-              let inside = false;
-              for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-                const xi = polygon[i][0], yi = polygon[i][1];
-                const xj = polygon[j][0], yj = polygon[j][1];
-                
-                const intersect = ((yi > point[1]) !== (yj > point[1])) &&
-                  (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi);
-                
-                if (intersect) inside = !inside;
-              }
-              
-              return inside;
-            })
-            .map(zone => ({
-              id: zone._id,
-              name: zone.name,
-              riskLevel: zone.riskLevel
-            }));
+      if (startDate) {
+        try {
+          filter.createdAt.$gte = new Date(startDate);
+        } catch (error) {
+          logger.warn(`Format de date de début invalide: ${startDate}`);
         }
-        
-        return {
-          ...alert,
-          inspection: inspection ? {
-            id: inspection._id,
-            status: inspection.status,
-            scheduledDate: inspection.scheduledDate,
-            completionDate: inspection.completionDate
-          } : null,
-          zones
-        };
-      }));
+      }
+      
+      if (endDate) {
+        try {
+          filter.createdAt.$lte = new Date(endDate);
+        } catch (error) {
+          logger.warn(`Format de date de fin invalide: ${endDate}`);
+        }
+      }
+    }
+    
+    try {
+      // Calculer le nombre total d'alertes correspondant au filtre
+      const total = await Alert.countDocuments(filter);
+      
+      // Calculer le nombre de pages et les informations de pagination
+      const limitNum = parseInt(limit) || 10;
+      const pageNum = parseInt(page) || 1;
+      const totalPages = Math.ceil(total / limitNum);
+      const skip = (pageNum - 1) * limitNum;
+      
+      // Récupérer les alertes avec pagination
+      const alerts = await Alert.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum);
+      
+      // Normaliser les données des alertes avant de les renvoyer
+      const normalizedAlerts = alerts.map(alert => alert.normalize());
+      
+      logger.info(`${normalizedAlerts.length} alertes récupérées avec succès (page ${pageNum}/${totalPages})`);
       
       res.json({
         success: true,
-        count: response.data.count,
-        total: response.data.total,
-        pagination: response.data.pagination,
-        data: enrichedAlerts
+        data: normalizedAlerts,
+        pagination: {
+          total,
+          totalPages,
+          currentPage: pageNum,
+          limit: limitNum
+        }
       });
     } catch (error) {
       logger.error(`Erreur lors de la récupération des alertes: ${error.message}`);
-      res.status(500).json({ error: 'Erreur lors de la récupération des alertes' });
+      res.status(500).json({ 
+        success: false,
+        error: 'Erreur lors de la récupération des alertes',
+        message: error.message 
+      });
     }
   } catch (error) {
     next(error);
@@ -124,99 +117,40 @@ exports.getAlertDetails = async (req, res, next) => {
   try {
     const { alertId } = req.params;
     
-    // Appeler le service d'alertes
-    try {
-      const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts/${alertId}`, {
-        headers: {
-          'Authorization': req.headers.authorization
-        }
+    if (!alertId || !mongoose.Types.ObjectId.isValid(alertId)) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'ID d\'alerte invalide ou manquant' 
       });
+    }
+    
+    try {
+      // Récupérer l'alerte depuis notre base de données locale
+      const alert = await Alert.findById(alertId);
       
-      const alert = response.data.data;
-      
-      // Vérifier si l'alerte appartient à la catégorie hygiène
-      if (alert.category !== 'hygiene') {
-        return res.status(403).json({ error: 'Cette alerte n\'appartient pas au service d\'hygiène' });
-      }
-      
-      // Récupérer l'inspection associée
-      const inspection = await Inspection.findOne({ alertId });
-      
-      // Vérifier si l'alerte est dans une zone à risque
-      let zones = [];
-      if (alert.location && alert.location.coordinates) {
-        const zonesContainingAlert = await Zone.find({
-          'boundary.type': 'Polygon'
+      if (!alert) {
+        return res.status(404).json({ 
+          success: false,
+          error: 'Alerte non trouvée' 
         });
-        
-        zones = zonesContainingAlert
-          .filter(zone => {
-            // Utiliser une fonction simplifiée pour vérifier si le point est dans le polygone
-            const point = alert.location.coordinates;
-            const polygon = zone.boundary.coordinates[0];
-            
-            // Algorithme du point-in-polygon
-            let inside = false;
-            for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-              const xi = polygon[i][0], yi = polygon[i][1];
-              const xj = polygon[j][0], yj = polygon[j][1];
-              
-              const intersect = ((yi > point[1]) !== (yj > point[1])) &&
-                (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi);
-              
-              if (intersect) inside = !inside;
-            }
-            
-            return inside;
-          })
-          .map(zone => ({
-            id: zone._id,
-            name: zone.name,
-            riskLevel: zone.riskLevel
-          }));
       }
       
-      // Si l'alerte est dans une zone, mettre à jour le compteur d'alertes de la zone
-      if (zones.length > 0 && !alert.zoneUpdated) {
-        for (const zone of zones) {
-          await Zone.findByIdAndUpdate(zone.id, {
-            $inc: { alertCount: 1 }
-          });
-        }
-        
-        // Marquer l'alerte comme mise à jour pour éviter les doublons
-        try {
-          await axios.put(`${config.ALERT_SERVICE_URL}/alerts/${alertId}/metadata`, {
-            zoneUpdated: true
-          }, {
-            headers: {
-              'Authorization': req.headers.authorization
-            }
-          });
-        } catch (error) {
-          logger.error(`Erreur lors de la mise à jour des métadonnées de l'alerte: ${error.message}`);
-        }
-      }
+      // Normaliser les données de l'alerte avant de les renvoyer
+      const normalizedAlert = alert.normalize();
+      
+      logger.info(`Détails de l'alerte ${alertId} récupérés avec succès`);
       
       res.json({
         success: true,
-        data: {
-          ...alert,
-          inspection: inspection ? {
-            id: inspection._id,
-            status: inspection.status,
-            scheduledDate: inspection.scheduledDate,
-            completionDate: inspection.completionDate,
-            findings: inspection.findings,
-            violationLevel: inspection.violationLevel,
-            recommendations: inspection.recommendations
-          } : null,
-          zones
-        }
+        data: normalizedAlert
       });
     } catch (error) {
-      logger.error(`Erreur lors de la récupération de l'alerte ${alertId}: ${error.message}`);
-      res.status(error.response?.status || 500).json({ error: 'Erreur lors de la récupération de l\'alerte' });
+      logger.error(`Erreur lors de la récupération des détails de l'alerte ${alertId}: ${error.message}`);
+      res.status(500).json({ 
+        success: false,
+        error: 'Erreur lors de la récupération des détails de l\'alerte',
+        message: error.message 
+      });
     }
   } catch (error) {
     next(error);
@@ -231,53 +165,57 @@ exports.getAlertDetails = async (req, res, next) => {
 exports.updateAlertStatus = async (req, res, next) => {
   try {
     const { alertId } = req.params;
-    const { status } = req.body;
+    const { status, comment } = req.body;
     
-    if (!status) {
-      return res.status(400).json({ error: 'Le statut est requis' });
-    }
-    
-    // Vérifier si le statut est valide
-    const validStatuses = ['pending', 'received', 'processing', 'resolved', 'rejected'];
+    // Vérifier que le statut est valide
+    const validStatuses = ['new', 'assigned', 'in_progress', 'resolved', 'closed'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: 'Statut invalide' });
     }
     
-    // Appeler le service d'alertes
     try {
-      const response = await axios.put(`${config.ALERT_SERVICE_URL}/alerts/${alertId}/status`, {
-        status
-      }, {
-        headers: {
-          'Authorization': req.headers.authorization
-        }
-      });
+      // Récupérer l'alerte à mettre à jour
+      const alert = await Alert.findById(alertId);
       
-      // Si le statut est "resolved" ou "rejected", mettre à jour l'inspection associée
-      if (status === 'resolved' || status === 'rejected') {
-        const inspection = await Inspection.findOne({ alertId });
+      if (!alert) {
+        return res.status(404).json({ error: 'Alerte non trouvée' });
+      }
+      
+      // Vérifier si l'alerte appartient à la catégorie hygiène
+      if (alert.category !== 'hygiene') {
+        return res.status(403).json({ error: 'Cette alerte n\'appartient pas au service d\'hygiène' });
+      }
+      
+      // Mettre à jour le statut
+      alert.status = status;
+      alert.updatedAt = new Date();
+      
+      // Ajouter un commentaire si fourni
+      if (comment) {
+        alert.comments.push({
+          author: req.user.name || req.user.id,
+          text: comment,
+          createdAt: new Date()
+        });
+      }
+      
+      // Sauvegarder les modifications
+      await alert.save();
+      
+      // Si l'alerte est résolue ou fermée, mettre à jour l'inspection associée
+      if (status === 'resolved' || status === 'closed') {
+        const inspection = await Inspection.findOne({ alertId: alert._id });
         
-        if (inspection && inspection.status !== 'completed' && inspection.status !== 'cancelled') {
-          inspection.status = status === 'resolved' ? 'completed' : 'cancelled';
+        if (inspection && inspection.status !== 'completed') {
+          inspection.status = 'completed';
           inspection.completionDate = new Date();
-          
           await inspection.save();
-          
-          // Mettre à jour le compteur d'inspections de l'équipe
-          if (inspection.teamId) {
-            const team = await Team.findById(inspection.teamId);
-            if (team) {
-              team.activeInspections -= 1;
-              team.completedInspections += 1;
-              await team.save();
-            }
-          }
         }
       }
       
       res.json({
         success: true,
-        data: response.data.data
+        data: alert.normalize()
       });
     } catch (error) {
       logger.error(`Erreur lors de la mise à jour du statut de l'alerte ${alertId}: ${error.message}`);
@@ -319,15 +257,15 @@ exports.assignAlertToTeam = async (req, res, next) => {
     }
     
     // Vérifier si l'alerte existe
-    try {
-      await axios.get(`${config.ALERT_SERVICE_URL}/alerts/${alertId}`, {
-        headers: {
-          'Authorization': req.headers.authorization
-        }
-      });
-    } catch (error) {
-      logger.error(`Erreur lors de la vérification de l'alerte ${alertId}: ${error.message}`);
+    const alert = await Alert.findById(alertId);
+    
+    if (!alert) {
       return res.status(404).json({ error: 'Alerte non trouvée' });
+    }
+    
+    // Vérifier si l'alerte appartient à la catégorie hygiène
+    if (alert.category !== 'hygiene') {
+      return res.status(403).json({ error: 'Cette alerte n\'appartient pas au service d\'hygiène' });
     }
     
     // Vérifier si une inspection existe déjà pour cette alerte
@@ -354,13 +292,19 @@ exports.assignAlertToTeam = async (req, res, next) => {
     
     // Mettre à jour le statut de l'alerte
     try {
-      await axios.put(`${config.ALERT_SERVICE_URL}/alerts/${alertId}/status`, {
-        status: 'processing'
-      }, {
-        headers: {
-          'Authorization': req.headers.authorization
-        }
+      // Mettre à jour le statut directement dans notre base de données locale
+      alert.status = 'in_progress';
+      alert.assignedTeam = teamId;
+      alert.updatedAt = new Date();
+      
+      // Ajouter un commentaire sur l'assignation
+      alert.comments.push({
+        author: req.user.name || req.user.id,
+        text: `Alerte assignée à l'équipe ${team.name} pour inspection le ${new Date(scheduledDate).toLocaleDateString()}`,
+        createdAt: new Date()
       });
+      
+      await alert.save();
     } catch (error) {
       logger.error(`Erreur lors de la mise à jour du statut de l'alerte ${alertId}: ${error.message}`);
       // On continue malgré l'erreur car l'inspection a été créée
@@ -418,24 +362,36 @@ exports.addFeedback = async (req, res, next) => {
       return res.status(400).json({ error: 'Le message est requis' });
     }
     
-    // Appeler le service d'alertes
     try {
-      const response = await axios.post(`${config.ALERT_SERVICE_URL}/alerts/${alertId}/feedback`, {
-        message,
-        fromService: true
-      }, {
-        headers: {
-          'Authorization': req.headers.authorization
-        }
+      // Récupérer l'alerte depuis la base de données locale
+      const alert = await Alert.findById(alertId);
+      
+      if (!alert) {
+        return res.status(404).json({ error: 'Alerte non trouvée' });
+      }
+      
+      // Vérifier si l'alerte appartient à la catégorie hygiène
+      if (alert.category !== 'hygiene') {
+        return res.status(403).json({ error: 'Cette alerte n\'appartient pas au service d\'hygiène' });
+      }
+      
+      // Ajouter le commentaire à l'alerte
+      alert.comments.push({
+        author: req.user.name || req.user.id,
+        text: message,
+        createdAt: new Date()
       });
+      
+      // Sauvegarder les modifications
+      await alert.save();
       
       res.json({
         success: true,
-        data: response.data.data
+        data: alert
       });
     } catch (error) {
       logger.error(`Erreur lors de l'ajout du feedback à l'alerte ${alertId}: ${error.message}`);
-      res.status(error.response?.status || 500).json({ error: 'Erreur lors de l\'ajout du feedback à l\'alerte' });
+      res.status(500).json({ error: 'Erreur lors de l\'ajout du feedback à l\'alerte' });
     }
   } catch (error) {
     next(error);
@@ -449,22 +405,86 @@ exports.addFeedback = async (req, res, next) => {
  */
 exports.getAlertStatistics = async (req, res, next) => {
   try {
-    // Appeler le service d'alertes
     try {
-      const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts/statistics`, {
-        params: { category: 'hygiene' },
-        headers: {
-          'Authorization': req.headers.authorization
-        }
+      // Utiliser la méthode statique du modèle pour obtenir les statistiques de base
+      const summary = await Alert.getStatistics('hygiene');
+      
+      // Compter les alertes par priorité
+      const alertsByPriority = await Alert.aggregate([
+        { $match: { category: 'hygiene' } },
+        { $group: { _id: '$priority', count: { $sum: 1 } } }
+      ]);
+      
+      // Compter les alertes par équipe assignée
+      const alertsByTeam = await Alert.aggregate([
+        { $match: { category: 'hygiene', assignedTeam: { $exists: true, $ne: null } } },
+        { $group: { _id: '$assignedTeam', count: { $sum: 1 } } }
+      ]);
+      
+      // Compter les alertes par mois (pour les 6 derniers mois)
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      
+      const alertsByMonth = await Alert.aggregate([
+        { 
+          $match: { 
+            category: 'hygiene',
+            createdAt: { $gte: sixMonthsAgo } 
+          } 
+        },
+        {
+          $group: {
+            _id: { 
+              year: { $year: '$createdAt' },
+              month: { $month: '$createdAt' }
+            },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1 } }
+      ]);
+      
+      // Formater les résultats pour la priorité
+      const formattedAlertsByPriority = {};
+      alertsByPriority.forEach(item => {
+        formattedAlertsByPriority[item._id] = item.count;
       });
+      
+      // Enrichir les données d'équipe avec les noms
+      const enrichedAlertsByTeam = await Promise.all(alertsByTeam.map(async item => {
+        const team = await Team.findById(item._id);
+        return {
+          teamId: item._id,
+          teamName: team ? team.name : 'Inconnu',
+          count: item.count
+        };
+      }));
+      
+      // Formater les données par mois
+      const formattedAlertsByMonth = alertsByMonth.map(item => ({
+        year: item._id.year,
+        month: item._id.month,
+        count: item.count
+      }));
+      
+      logger.info('Statistiques d\'alertes récupérées avec succès');
       
       res.json({
         success: true,
-        data: response.data.data
+        data: {
+          summary,
+          byPriority: formattedAlertsByPriority,
+          byTeam: enrichedAlertsByTeam,
+          byMonth: formattedAlertsByMonth
+        }
       });
     } catch (error) {
       logger.error(`Erreur lors de la récupération des statistiques d'alertes: ${error.message}`);
-      res.status(error.response?.status || 500).json({ error: 'Erreur lors de la récupération des statistiques d\'alertes' });
+      res.status(500).json({ 
+        success: false,
+        error: 'Erreur lors de la récupération des statistiques d\'alertes',
+        message: error.message 
+      });
     }
   } catch (error) {
     next(error);

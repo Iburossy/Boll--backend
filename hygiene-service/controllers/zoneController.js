@@ -1,7 +1,7 @@
 const Zone = require('../models/zone');
 const Team = require('../models/team');
 const Inspection = require('../models/inspection');
-const axios = require('axios');
+const Alert = require('../models/alert');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 const geoUtils = require('../utils/geoUtils');
@@ -113,22 +113,13 @@ exports.getHotspots = async (req, res, next) => {
   try {
     const { radius = 1, minAlerts = 5 } = req.query;
     
-    // Récupérer les alertes d'hygiène via le service d'alertes
+    // Récupérer les alertes d'hygiène directement depuis notre modèle local
     let alertsData = [];
     try {
-      const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts`, {
-        params: {
-          category: 'hygiene',
-          limit: 1000
-        },
-        headers: {
-          'Authorization': req.headers.authorization
-        }
-      });
-      
-      alertsData = response.data.data || [];
+      alertsData = await Alert.find({ category: 'hygiene' }).limit(1000);
+      logger.info('Alertes récupérées depuis le modèle local pour l\'analyse des zones');
     } catch (error) {
-      logger.error(`Erreur lors de la récupération des alertes: ${error.message}`);
+      logger.warn(`Erreur lors de la récupération des alertes: ${error.message}`);
       alertsData = [];
     }
     
@@ -355,25 +346,24 @@ exports.getZoneAlerts = async (req, res, next) => {
       return res.status(404).json({ error: 'Zone non trouvée' });
     }
     
-    // Récupérer les alertes via le service d'alertes
+    // Récupérer les alertes directement depuis notre modèle local
     try {
-      // Convertir les coordonnées du polygone en format compatible avec l'API d'alertes
-      const boundaryCoordinates = zone.boundary.coordinates[0];
-      
-      const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts/in-area`, {
-        params: {
-          category: 'hygiene',
-          polygon: JSON.stringify(boundaryCoordinates)
-        },
-        headers: {
-          'Authorization': req.headers.authorization
+      // Utiliser une requête géospatiale pour trouver les alertes dans la zone
+      const alerts = await Alert.find({
+        category: 'hygiene',
+        'location.coordinates': {
+          $geoWithin: {
+            $geometry: zone.boundary
+          }
         }
       });
       
+      logger.info(`Alertes dans la zone ${zone._id} récupérées depuis le modèle local`);
+      
       res.json({
         success: true,
-        count: response.data.count,
-        data: response.data.data
+        count: alerts.length,
+        data: alerts
       });
     } catch (error) {
       logger.error(`Erreur lors de la récupération des alertes dans la zone ${zone._id}: ${error.message}`);

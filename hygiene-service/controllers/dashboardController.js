@@ -1,7 +1,7 @@
 const Inspection = require('../models/inspection');
 const Zone = require('../models/zone');
 const Team = require('../models/team');
-const axios = require('axios');
+const Alert = require('../models/alert');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 
@@ -16,52 +16,16 @@ const config = require('../config/env');
  */
 exports.getSummary = async (req, res, next) => {
   try {
-    // Récupérer les statistiques des alertes
-    let alertStats = {
-      total: 0,
-      pending: 0,
-      processing: 0,
-      resolved: 0,
-      rejected: 0
+    // Récupérer les statistiques des alertes directement depuis notre modèle local
+    const alertStats = {
+      total: await Alert.countDocuments({ category: 'hygiene' }),
+      pending: await Alert.countDocuments({ category: 'hygiene', status: 'new' }),
+      processing: await Alert.countDocuments({ category: 'hygiene', status: { $in: ['assigned', 'in_progress'] } }),
+      resolved: await Alert.countDocuments({ category: 'hygiene', status: 'resolved' }),
+      rejected: await Alert.countDocuments({ category: 'hygiene', status: 'closed' })
     };
     
-    // En mode développement, simuler les données d'alertes si le service n'est pas disponible
-    if (process.env.NODE_ENV === 'development') {
-      try {
-        const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts/statistics`, {
-          params: { category: 'hygiene' },
-          headers: { 'Authorization': req.headers.authorization }
-        });
-        
-        if (response.data && response.data.success) {
-          alertStats = response.data.data.summary || alertStats;
-        }
-      } catch (error) {
-        logger.warn(`Service d'alertes non disponible, utilisation de données simulées: ${error.message}`);
-        // Simuler des données d'alertes pour le développement
-        alertStats = {
-          total: 15,
-          pending: 5,
-          processing: 4,
-          resolved: 5,
-          rejected: 1
-        };
-      }
-    } else {
-      // En production, essayer de récupérer les vraies données
-      try {
-        const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts/statistics`, {
-          params: { category: 'hygiene' },
-          headers: { 'Authorization': req.headers.authorization }
-        });
-        
-        if (response.data && response.data.success) {
-          alertStats = response.data.data.summary || alertStats;
-        }
-      } catch (error) {
-        logger.error(`Erreur lors de la récupération des statistiques d'alertes: ${error.message}`);
-      }
-    }
+    logger.info('Statistiques d\'alertes récupérées depuis le modèle local');
     
     // Statistiques des inspections
     const inspectionStats = {
@@ -146,21 +110,44 @@ exports.getSummary = async (req, res, next) => {
  */
 exports.getAlertStats = async (req, res, next) => {
   try {
-    // Récupérer les statistiques des alertes via le service d'alertes
+    // Récupérer les statistiques des alertes directement depuis notre modèle local
     try {
-      const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts/statistics`, {
-        params: { category: 'hygiene' },
-        headers: { 'Authorization': req.headers.authorization }
+      // Calculer les statistiques directement depuis notre base de données locale
+      const totalAlerts = await Alert.countDocuments({ category: 'hygiene' });
+      
+      // Compter les alertes par statut
+      const alertsByStatus = await Alert.aggregate([
+        { $match: { category: 'hygiene' } },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]);
+      
+      // Compter les alertes par priorité
+      const alertsByPriority = await Alert.aggregate([
+        { $match: { category: 'hygiene' } },
+        { $group: { _id: '$priority', count: { $sum: 1 } } }
+      ]);
+      
+      // Formater les résultats
+      const formattedAlertsByStatus = {};
+      alertsByStatus.forEach(item => {
+        formattedAlertsByStatus[item._id] = item.count;
       });
       
-      if (response.data && response.data.success) {
-        return res.json({
-          success: true,
-          data: response.data.data
-        });
-      }
+      const formattedAlertsByPriority = {};
+      alertsByPriority.forEach(item => {
+        formattedAlertsByPriority[item._id] = item.count;
+      });
       
-      throw new Error('Données non disponibles');
+      logger.info('Statistiques d\'alertes récupérées depuis le modèle local pour le tableau de bord');
+      
+      return res.json({
+        success: true,
+        data: {
+          total: totalAlerts,
+          byStatus: formattedAlertsByStatus,
+          byPriority: formattedAlertsByPriority
+        }
+      });
     } catch (error) {
       logger.error(`Erreur lors de la récupération des statistiques d'alertes: ${error.message}`);
       
@@ -433,33 +420,33 @@ exports.getTeamPerformance = async (req, res, next) => {
  */
 exports.getAlertHeatmap = async (req, res, next) => {
   try {
-    // Récupérer les alertes via le service d'alertes
-    try {
-      const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts/heatmap`, {
-        params: { category: 'hygiene' },
-        headers: { 'Authorization': req.headers.authorization }
-      });
-      
-      if (response.data && response.data.success) {
-        return res.json({
-          success: true,
-          data: response.data.data
-        });
-      }
-      
-      throw new Error('Données non disponibles');
-    } catch (error) {
-      logger.error(`Erreur lors de la récupération de la carte de chaleur: ${error.message}`);
-      
-      // Retourner une réponse par défaut en cas d'erreur
-      res.json({
-        success: false,
-        error: 'Impossible de récupérer la carte de chaleur',
-        data: []
-      });
-    }
+    // Récupérer les alertes avec des coordonnées géographiques
+    const alerts = await Alert.find({
+      category: 'hygiene',
+      'location.coordinates': { $exists: true, $ne: null }
+    }).select('location priority status');
+    
+    logger.info('Données de carte de chaleur récupérées depuis le modèle local');
+    
+    // Formater les données pour la carte de chaleur
+    const heatmapData = alerts.map(alert => ({
+      lat: alert.location.coordinates[1],
+      lng: alert.location.coordinates[0],
+      weight: getPriorityWeight(alert.priority),
+      status: alert.status
+    }));
+    
+    return res.json({
+      success: true,
+      data: heatmapData
+    });
   } catch (error) {
-    next(error);
+    logger.error(`Erreur lors de la récupération des données de carte de chaleur: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      data: []
+    });
   }
 };
 
@@ -470,115 +457,83 @@ exports.getAlertHeatmap = async (req, res, next) => {
  */
 exports.getRecentAlerts = async (req, res, next) => {
   try {
-    // En mode développement, simuler les données d'alertes si le service n'est pas disponible
-    if (process.env.NODE_ENV === 'development') {
-      try {
-        const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts`, {
-          params: { 
-            category: 'hygiene',
-            limit: 5,
-            sort: '-createdAt'
-          },
-          headers: { 'Authorization': req.headers.authorization }
-        });
-        
-        if (response.data && response.data.success) {
-          return res.json({
-            success: true,
-            data: response.data.data
-          });
-        }
-        
-        throw new Error('Données non disponibles');
-      } catch (error) {
-        logger.warn(`Service d'alertes non disponible, utilisation de données simulées: ${error.message}`);
-        
-        // Simuler des données d'alertes pour le développement
-        const mockAlerts = [
-          {
-            _id: '60d21b4667d0d8992e610c85',
-            title: 'Déchets sur la voie publique',
-            description: 'Accumulation de déchets près du marché de Médina',
-            category: 'hygiene',
-            location: {
-              type: 'Point',
-              coordinates: [14.6937, -17.4386]
-            },
-            status: 'pending',
-            priority: 'high',
-            createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 heures avant
-            reportedBy: 'Citoyen anonyme'
-          },
-          {
-            _id: '60d21b4667d0d8992e610c86',
-            title: 'Eau stagnante',
-            description: 'Eau stagnante depuis plusieurs jours, risque sanitaire',
-            category: 'hygiene',
-            location: {
-              type: 'Point',
-              coordinates: [14.7037, -17.4286]
-            },
-            status: 'processing',
-            priority: 'medium',
-            createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 jour avant
-            reportedBy: 'Mamadou Diallo'
-          },
-          {
-            _id: '60d21b4667d0d8992e610c87',
-            title: 'Problème dégout',
-            description: 'Dégout bouché causant des odeurs nauséabondes',
-            category: 'hygiene',
-            location: {
-              type: 'Point',
-              coordinates: [14.7137, -17.4186]
-            },
-            status: 'pending',
-            priority: 'high',
-            createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes avant
-            reportedBy: 'Fatou Sow'
-          }
-        ];
-        
-        return res.json({
-          success: true,
-          data: mockAlerts
-        });
-      }
-    } else {
-      // En production, essayer de récupérer les vraies données
-      try {
-        const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts`, {
-          params: { 
-            category: 'hygiene',
-            limit: 5,
-            sort: '-createdAt'
-          },
-          headers: { 'Authorization': req.headers.authorization }
-        });
-        
-        if (response.data && response.data.success) {
-          return res.json({
-            success: true,
-            data: response.data.data
-          });
-        }
-        
-        throw new Error('Données non disponibles');
-      } catch (error) {
-        logger.error(`Erreur lors de la récupération des alertes récentes: ${error.message}`);
-        
-        // Retourner une réponse par défaut en cas d'erreur
-        return res.json({
-          success: false,
-          error: 'Impossible de récupérer les alertes récentes',
-          data: []
-        });
-      }
+    // Récupérer les alertes récentes directement depuis notre modèle local
+    const recentAlerts = await Alert.find({ category: 'hygiene' })
+      .sort({ createdAt: -1 })
+      .limit(5);
+    
+    logger.info('Alertes récentes récupérées depuis le modèle local');
+    
+    // Si aucune alerte n'est trouvée, renvoyer un tableau vide
+    if (!recentAlerts || recentAlerts.length === 0) {
+      return res.json({
+        success: true,
+        data: []
+      });
     }
+    
+    return res.json({
+      success: true,
+      data: recentAlerts
+    });
   } catch (error) {
-    next(error);
+    logger.error(`Erreur lors de la récupération des alertes récentes: ${error.message}`);
+    
+    // En cas d'erreur, renvoyer un tableau vide
+    return res.json({
+      success: false,
+      error: error.message,
+      data: []
+    });
   }
 };
+
+/**
+ * Récupérer la carte de chaleur des alertes
+ * @route GET /dashboard/heatmap
+ * @access Privé
+ */
+exports.getAlertHeatmap = async (req, res, next) => {
+  try {
+    // Récupérer les alertes avec des coordonnées géographiques
+    const alerts = await Alert.find({
+      category: 'hygiene',
+      'location.coordinates': { $exists: true, $ne: null }
+    }).select('location priority status');
+    
+    logger.info('Données de carte de chaleur récupérées depuis le modèle local');
+    
+    // Formater les données pour la carte de chaleur
+    const heatmapData = alerts.map(alert => ({
+      lat: alert.location.coordinates[1],
+      lng: alert.location.coordinates[0],
+      weight: getPriorityWeight(alert.priority),
+      status: alert.status
+    }));
+    
+    return res.json({
+      success: true,
+      data: heatmapData
+    });
+  } catch (error) {
+    logger.error(`Erreur lors de la récupération des données de carte de chaleur: ${error.message}`);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Fonction utilitaire pour obtenir le poids en fonction de la priorité
+function getPriorityWeight(priority) {
+  switch (priority) {
+    case 'critical': return 10;
+    case 'high': return 7;
+    case 'medium': return 5;
+    case 'low': return 3;
+    default: return 1;
+  }
+}
 
 /**
  * Récupérer les inspections à venir
@@ -733,25 +688,33 @@ exports.getStatsByPeriod = async (req, res, next) => {
       })
     };
     
-    // Statistiques des alertes pour la période
+    // Statistiques des alertes pour la période directement depuis notre modèle local
     let alertStats = {
       total: 0,
       resolved: 0
     };
     
     try {
-      const response = await axios.get(`${config.ALERT_SERVICE_URL}/alerts/statistics`, {
-        params: { 
-          category: 'hygiene',
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString()
-        },
-        headers: { 'Authorization': req.headers.authorization }
+      // Compter le nombre total d'alertes pour la période
+      alertStats.total = await Alert.countDocuments({
+        category: 'hygiene',
+        createdAt: {
+          $gte: startDate,
+          $lte: endDate
+        }
       });
       
-      if (response.data && response.data.success) {
-        alertStats = response.data.data.period || alertStats;
-      }
+      // Compter le nombre d'alertes résolues pour la période
+      alertStats.resolved = await Alert.countDocuments({
+        category: 'hygiene',
+        status: 'resolved',
+        createdAt: {
+          $gte: startDate,
+          $lte: endDate
+        }
+      });
+      
+      logger.info(`Statistiques d'alertes pour la période ${period} récupérées depuis le modèle local`);
     } catch (error) {
       logger.error(`Erreur lors de la récupération des statistiques d'alertes pour la période: ${error.message}`);
     }

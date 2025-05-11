@@ -18,7 +18,6 @@ module.exports = {
   JWT_EXPIRATION: process.env.JWT_EXPIRATION || '7d',
   
   // URLs des autres services
-  ALERT_SERVICE_URL: process.env.ALERT_SERVICE_URL || 'http://localhost:3002',
   AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
   NOTIFICATION_SERVICE_URL: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3005',
   
