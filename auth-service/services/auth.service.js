@@ -12,7 +12,7 @@ class AuthService {
    * @param {Object} userData - Les données de l'utilisateur
    * @returns {Object} L'utilisateur créé et les tokens
    */
-  async registerCitizen(userData) {
+  async register(userData) {
     try {
       // Vérifier si l'email existe déjà
       const existingUser = await User.findOne({ email: userData.email });
@@ -295,60 +295,7 @@ class AuthService {
     }
   }
 
-  /**
-   * Crée un nouvel agent de service (par un admin)
-   * @param {Object} agentData - Les données de l'agent
-   * @param {string} createdBy - L'ID de l'admin créateur
-   * @returns {Object} L'agent créé
-   */
-  async createServiceAgent(agentData, createdBy) {
-    try {
-      // Vérifier si l'email existe déjà
-      const existingUser = await User.findOne({ email: agentData.email });
-      if (existingUser) {
-        throw new Error('Cet email est déjà utilisé');
-      }
-
-      // Générer un mot de passe temporaire
-      const temporaryPassword = crypto.randomBytes(8).toString('hex');
-
-      // Créer le nouvel agent
-      const agent = new User({
-        fullName: agentData.fullName,
-        email: agentData.email,
-        phone: agentData.phone,
-        password: temporaryPassword,
-        role: 'agent',
-        service: agentData.service,
-        region: agentData.region,
-        isTemporaryPassword: true,
-        isVerified: true // Les agents sont vérifiés par défaut car créés par un admin
-      });
-
-      // Sauvegarder l'agent
-      await agent.save();
-
-      // Envoyer un email avec les identifiants
-      try {
-        await emailService.sendAgentCredentialsEmail(
-          agent.email,
-          agent.fullName,
-          agent.service,
-          temporaryPassword
-        );
-      } catch (emailError) {
-        console.error('Erreur lors de l\'envoi de l\'email avec les identifiants:', emailError);
-        // Ne pas bloquer la création si l'email échoue
-      }
-
-      return {
-        agent: agent.getBasicInfo(),
-        temporaryPassword
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
+  // La méthode createServiceAgent a été supprimée car le service d'authentification ne gère plus que les citoyens
 
   /**
    * Récupère les informations d'un utilisateur

@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
-const superadminRoutes = require('./superadmin.routes');
 const authMiddleware = require('../middlewares/auth.middleware');
+const serviceRoutes = require('./service.routes');
+const alertRoutes = require('./alert.routes');
 
 // Route de santé (health check)
 router.get('/health', (req, res) => {
@@ -25,10 +26,12 @@ router.get('/profile', authController.getProfile);
 router.put('/profile', authController.updateProfile);
 router.post('/logout', authController.logout);
 
-// Routes admin
-router.post('/admin/create-agent', authMiddleware.checkRole(['admin']), authController.createServiceAgent);
+// Aucune route admin ou superadmin - Service recentré sur les citoyens uniquement
 
-// Routes superadmin
-router.use('/superadmin', superadminRoutes);
+// Routes pour les services disponibles
+router.use('/services', serviceRoutes);
+
+// Routes pour les alertes
+router.use('/alerts', alertRoutes);
 
 module.exports = router;

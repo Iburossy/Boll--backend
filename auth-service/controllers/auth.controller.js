@@ -27,7 +27,7 @@ class AuthController {
       const { fullName, email, phone, password } = value;
       
       // Appeler le service d'authentification pour l'inscription
-      const result = await authService.registerCitizen({
+      const result = await authService.register({
         fullName,
         email,
         phone,
@@ -451,55 +451,7 @@ class AuthController {
     });
   }
 
-  /**
-   * Création d'un agent de service (par un admin)
-   * @param {Object} req - La requête HTTP
-   * @param {Object} res - La réponse HTTP
-   */
-  async createServiceAgent(req, res) {
-    try {
-      // Vérifier que l'utilisateur est admin ou superadmin (fait par le middleware)
-      
-      // Valider les données de création d'agent
-      const { error, value } = validators.validateCreateServiceAgent(req.body);
-      
-      if (error) {
-        const errorMessages = error.details.map(detail => detail.message).join(', ');
-        return res.status(400).json({ 
-          success: false, 
-          message: errorMessages 
-        });
-      }
-      
-      const { fullName, email, phone, service, region } = value;
-      
-      // L'ID de l'admin est extrait du token par le middleware d'authentification
-      const adminId = req.user.sub;
-      
-      // Créer l'agent de service
-      const result = await authService.createServiceAgent({
-        fullName,
-        email,
-        phone,
-        service,
-        region
-      }, adminId);
-      
-      res.status(201).json({
-        success: true,
-        message: 'Agent de service créé avec succès',
-        data: {
-          agent: result.agent,
-          temporaryPassword: result.temporaryPassword // À supprimer en production, uniquement pour le développement
-        }
-      });
-    } catch (error) {
-      res.status(400).json({
-        success: false,
-        message: error.message || 'Erreur lors de la création de l\'agent'
-      });
-    }
-  }
+  // La méthode createServiceAgent a été supprimée car le service d'authentification ne gère plus que les citoyens
 
   /**
    * Changement de mot de passe

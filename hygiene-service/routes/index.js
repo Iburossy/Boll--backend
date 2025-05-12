@@ -10,6 +10,7 @@ const inspectionRoutes = require('./inspection.routes');
 const zoneRoutes = require('./zone.routes');
 const teamRoutes = require('./team.routes');
 const reportRoutes = require('./report.routes');
+const externalRoutes = require('./external.routes');
 
 // Route de base pour vérifier l'état du service
 router.get('/', (req, res) => {
@@ -30,5 +31,8 @@ router.use('/inspections', authMiddleware.verifyToken, authMiddleware.isHygieneS
 router.use('/zones', authMiddleware.verifyToken, authMiddleware.isHygieneService, zoneRoutes);
 router.use('/teams', authMiddleware.verifyToken, authMiddleware.isHygieneService, teamRoutes);
 router.use('/reports', authMiddleware.verifyToken, authMiddleware.isHygieneService, reportRoutes);
+
+// Routes pour les API externes (service citoyen)
+router.use('/api/external', externalRoutes);
 
 module.exports = router;

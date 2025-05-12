@@ -123,44 +123,6 @@ class EmailService {
     
     return this.sendEmail(to, subject, html);
   }
-
-  /**
-   * Envoie un email avec les identifiants temporaires à un agent de service
-   * @param {string} to - Adresse email du destinataire
-   * @param {string} name - Nom du destinataire
-   * @param {string} service - Service de l'agent
-   * @param {string} temporaryPassword - Mot de passe temporaire
-   * @returns {Promise} Résultat de l'envoi
-   */
-  async sendAgentCredentialsEmail(to, name, service, temporaryPassword) {
-    const subject = 'Vos identifiants pour Bollé Service';
-    
-    // URL de connexion (à adapter selon votre frontend)
-    const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`;
-    
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #1E88E5;">Bienvenue sur Bollé Service !</h2>
-        <p>Bonjour ${name},</p>
-        <p>Un compte a été créé pour vous sur Bollé Service en tant qu'agent du service <strong>${service}</strong>.</p>
-        <p>Voici vos identifiants de connexion :</p>
-        <ul>
-          <li><strong>Email :</strong> ${to}</li>
-          <li><strong>Mot de passe temporaire :</strong> ${temporaryPassword}</li>
-        </ul>
-        <p>Veuillez vous connecter en utilisant le bouton ci-dessous :</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${loginUrl}" style="background-color: #1E88E5; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px; font-weight: bold;">
-            Me connecter
-          </a>
-        </div>
-        <p>Lors de votre première connexion, vous serez invité à changer votre mot de passe.</p>
-        <p>Cordialement,<br>L'équipe Bollé</p>
-      </div>
-    `;
-    
-    return this.sendEmail(to, subject, html);
-  }
 }
 
 module.exports = new EmailService();

@@ -4,7 +4,24 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const admin = require('firebase-admin');
+const fs = require('fs');
+const path = require('path');
 const routes = require('./routes');
+
+// Créer les dossiers d'upload s'ils n'existent pas
+const uploadsDir = path.join(__dirname, 'uploads');
+const uploadFolders = ['photos', 'videos', 'audio', 'thumbnails'];
+
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
+
+uploadFolders.forEach(folder => {
+  const folderPath = path.join(uploadsDir, folder);
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath);
+  }
+});
 
 // Initialisation de Firebase Admin
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -22,6 +39,9 @@ const PORT = process.env.PORT || 3001;
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+
+// Servir les fichiers statiques (uploads)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Connexion à MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/bolle-auth', {

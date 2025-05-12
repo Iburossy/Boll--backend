@@ -157,38 +157,7 @@ class Validators {
     return schema.validate(data, { abortEarly: false });
   }
 
-  /**
-   * Valide les données de création d'un agent de service
-   * @param {Object} data - Les données à valider
-   * @returns {Object} Résultat de la validation
-   */
-  validateCreateServiceAgent(data) {
-    const schema = Joi.object({
-      fullName: Joi.string().min(3).max(50).required()
-        .messages({
-          'string.empty': 'Le nom complet est requis',
-          'string.min': 'Le nom complet doit contenir au moins {#limit} caractères',
-          'string.max': 'Le nom complet ne peut pas dépasser {#limit} caractères'
-        }),
-      email: Joi.string().email().required()
-        .messages({
-          'string.empty': 'L\'email est requis',
-          'string.email': 'Veuillez fournir un email valide'
-        }),
-      phone: Joi.string().pattern(/^[0-9+]{9,15}$/).allow('', null)
-        .messages({
-          'string.pattern.base': 'Le numéro de téléphone doit contenir entre 9 et 15 chiffres'
-        }),
-      service: Joi.string().valid('Police', 'Hygiène', 'Douane', 'Urbanisme', 'Autre').required()
-        .messages({
-          'string.empty': 'Le service est requis',
-          'any.only': 'Le service doit être l\'un des suivants : Police, Hygiène, Douane, Urbanisme, Autre'
-        }),
-      region: Joi.string().allow('', null)
-    });
-
-    return schema.validate(data, { abortEarly: false });
-  }
+  // La méthode validateCreateServiceAgent a été supprimée car le service d'authentification ne gère plus que les citoyens
 }
 
 module.exports = new Validators();

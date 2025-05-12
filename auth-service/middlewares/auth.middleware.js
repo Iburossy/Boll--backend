@@ -74,25 +74,7 @@ class AuthMiddleware {
     };
   }
 
-  /**
-   * Vérifie si l'utilisateur est un administrateur
-   * @param {Object} req - La requête HTTP
-   * @param {Object} res - La réponse HTTP
-   * @param {Function} next - Fonction pour passer au middleware suivant
-   */
-  isAdmin(req, res, next) {
-    return this.checkRole(['admin', 'superadmin'])(req, res, next);
-  }
-
-  /**
-   * Vérifie si l'utilisateur est un superadmin
-   * @param {Object} req - La requête HTTP
-   * @param {Object} res - La réponse HTTP
-   * @param {Function} next - Fonction pour passer au middleware suivant
-   */
-  isSuperAdmin(req, res, next) {
-    return this.checkRole(['superadmin'])(req, res, next);
-  }
+  // Les méthodes isAdmin et isSuperAdmin ont été supprimées car le service d'authentification ne gère plus que les citoyens
   
   /**
    * Autorise uniquement les rôles spécifiés

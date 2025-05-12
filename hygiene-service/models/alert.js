@@ -115,7 +115,21 @@ const AlertSchema = new Schema({
   zoneUpdated: {
     type: Boolean,
     default: false
-  }
+  },
+  externalReferences: [{
+    serviceId: {
+      type: String,
+      required: true
+    },
+    alertId: {
+      type: String,
+      required: true
+    },
+    citizenId: {
+      type: String,
+      required: false
+    }
+  }]
 }, {
   timestamps: true
 });

@@ -23,8 +23,7 @@ class TokenService {
   generateAuthTokens(user) {
     const payload = {
       sub: user._id,
-      role: user.role,
-      service: user.service
+      role: user.role
     };
 
     const accessToken = this.generateToken(payload);

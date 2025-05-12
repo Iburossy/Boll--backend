@@ -26,7 +26,6 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['citizen', 'agent'],
     default: 'citizen'
   },
   isVerified: {
@@ -37,11 +36,7 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  service: {
-    type: String,
-    enum: ['Police', 'Hygiène', 'Douane', 'Urbanisme', 'Autre', null],
-    default: null
-  },
+
   region: {
     type: String,
     default: 'Dakar'
