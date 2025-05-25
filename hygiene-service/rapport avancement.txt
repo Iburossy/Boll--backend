@@ -15,39 +15,3 @@ Intégration avec le backend
 Configuration d'Axios pour les appels API
 Gestion des tokens JWT pour l'authentification
 Services pour communiquer avec les endpoints du backend
-
-
-Ce qu'il reste à faire
-Fonctionnalités de gestion des inspections
-Service d'inspections pour communiquer avec le backend
-Composants et pages pour gérer les inspections
-Calendrier des inspections
-Gestion des zones
-Service pour les zones géographiques
-Composants et pages pour visualiser et gérer les zones
-Intégration de cartes pour afficher les zones
-
-Gestion des équipes
-Service pour gérer les équipes d'agents
-Pages pour la création et gestion des équipes
-Attribution des équipes aux zones et inspections
-Rapports et statistiques
-Visualisation des données et statistiques
-Génération de rapports
-Tableaux de bord analytiques
-Fonctionnalités avancées
-Notifications en temps réel
-Export de données
-Gestion des utilisateurs et des rôles
-Intégration avec le backend
-Les services que nous avons implémentés sont conçus pour s'intégrer avec un backend RESTful, mais quelques points à vérifier :
-
-Endpoints API : Nous avons créé des services qui supposent certains endpoints API (comme /alerts, /alerts/:id, etc.). Il faudra vérifier que ces endpoints existent bien dans votre backend avec les mêmes noms et structures.
-Structure des données : Les types TypeScript que nous avons définis (comme Alert, AlertAttachment, etc.) doivent correspondre aux structures de données renvoyées par votre backend.
-Authentification : Nous avons mis en place un système d'authentification JWT. Votre backend doit supporter ce type d'authentification et renvoyer les tokens dans le format attendu.
-Gestion des erreurs : Nous avons implémenté une gestion basique des erreurs, mais il faudra peut-être l'adapter en fonction des codes d'erreur spécifiques de votre backend.
-Pour assurer une bonne intégration, je vous recommande de :
-
-Vérifier la documentation de votre API backend
-Tester chaque endpoint avec des outils comme Postman avant de l'intégrer
-Ajuster les services frontend si nécessaire pour qu'ils correspondent exactement à votre backend
